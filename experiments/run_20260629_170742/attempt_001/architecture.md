@@ -1,0 +1,82 @@
+# Architecture Design: Contrastive Learning for SNP Classification
+
+## 1. Research Objective
+The goal is to design a representation learning framework that leverages contrastive learning to extract robust, high-dimensional embeddings from Single Nucleotide Polymorphism (SNP) data. These embeddings will serve as the foundation for downstream classification tasks (e.g., predicting pathogenicity, phenotypic association, or functional impact), particularly in scenarios where labeled genomic data is scarce but unlabeled sequence data is abundant.
+
+---
+
+## 2. Data Representation & Preprocessing
+Since SNPs are discrete variations in a DNA sequence, the model must handle both the **local variation** (the SNP itself) and the **genomic context** (flanking sequences).
+
+### Input Encoding
+*   **Sequence Windowing:** For each SNP of interest, extract a fixed-length window (e.g., 1kb to 10kb) centered on the variant.
+*   **Tokenization:** 
+    *   *K-mer Embedding:* Overlapping k-mers (e.g., 3-mers) to capture local motifs.
+    *   *One-Hot Encoding:* Standard $4 \times L$ encoding for nucleotide bases $\{A, C, G, T\}$.
+*   **Variant Marking:** Use a special token or an additional binary channel to explicitly mark the position of the SNP within the window.
+
+---
+
+## 3. Proposed Architecture: "SNP-ContrastNet"
+
+I propose a **Hybrid Hierarchical Encoder** combined with a **Projection Head**, utilizing a framework inspired by SimCLR and MoCo, but adapted for genomic constraints.
+
+### A. The Encoder ($\text{Enc}$)
+To capture both local motifs (transcription factor binding sites) and long-range dependencies (enhancer-promoter interactions), the encoder is split into two stages:
+1.  **Local Feature Extractor (CNN):** A series of 1D dilated convolutional layers to identify short-range patterns and reduce sequence dimensionality.
+2.  **Global Context Aggregator (Transformer/Mamba):** A Transformer encoder or a State Space Model (SSM) like Mamba to capture long-range genomic dependencies across the window.
+3.  **Pooling Layer:** Global Average Pooling (GAP) or a [CLS] token to compress the sequence into a fixed-size latent vector $\mathbf{z}$.
+
+### B. The Projection Head ($\text{Proj}$)
+A small MLP (Multi-Layer Perceptron) with ReLU activation that maps the latent vector $\mathbf{z}$ to a hypersphere space $\mathbf{h} = g(\mathbf{z})$. This prevents the encoder from collapsing and preserves information for downstream tasks by discarding noise irrelevant to the contrastive objective.
+
+### C. Contrastive Strategy (Positive/Negative Pair Generation)
+The core of the model relies on how "similarity" is defined:
+*   **Augmentation-based Positives:** 
+    *   *Sequence Masking:* Randomly masking non-SNP nucleotides in the flanking region.
+    *   *Jittering:* Shifting the window slightly around the SNP.
+    *   *Synonymous Substitution:* Replacing bases with others that do not change the predicted functional class (if known).
+*   **Biological Positives:** SNPs located within the same Linkage Disequilibrium (LD) block or those affecting the same protein domain.
+*   **Negatives:** Randomly sampled SNPs from different chromosomes or distant genomic regions.
+
+---
+
+## 4. Algorithm & Learning Objective
+
+### Loss Function: NT-Xent (Normalized Temperature-scaled Cross Entropy)
+The model is trained to maximize the cosine similarity between two augmented views of the same SNP while minimizing similarity with all other SNPs in the batch.
+
+$$\mathcal{L}_{i,j} = -\log \frac{\exp(\text{sim}(\mathbf{h}_i, \mathbf{h}_j)/\tau)}{\sum_{k=1}^{2N} \mathbb{1}_{[k \neq i]} \exp(\text{sim}(\mathbf{h}_i, \mathbf{h}_k)/\tau)}$$
+
+### Training Workflow
+1.  **Pre-training (Unsupervised):** Train the Encoder + Projection Head on a massive dataset of unlabeled SNP windows using the contrastive loss.
+2.  **Linear Probing/Fine-tuning:** Discard the projection head. Attach a classification head (MLP) to the encoder. Fine-tune on a smaller, labeled dataset for specific SNP classification (e.g., Benign vs. Pathogenic).
+
+---
+
+## 5. Comparison of Approaches
+
+| Approach | Pros | Cons | Suitability for SNPs |
+| :--- | :--- | :--- | :--- |
+| **Pure CNN** | Fast; excellent at motif detection. | Poor long-range context. | Low (misses distal regulatory effects). |
+| **Pure Transformer** | Captures global dependencies. | Quadratic complexity $O(L^2)$. | Medium (computationally heavy for large windows). |
+| **Proposed Hybrid** | Best of both; efficient and expressive. | More complex hyperparameter tuning. | **High** |
+| **VAE-based** | Generative; learns a smooth manifold. | Often produces "blurry" representations. | Medium (better for clustering than classification). |
+
+---
+
+## 6. Trade-offs & Design Decisions
+
+*   **Window Size vs. Resolution:** Increasing the window size captures more regulatory context but increases noise and computational cost. I chose a **Hybrid Encoder** to mitigate this by using CNNs for initial dimensionality reduction before passing data to the Transformer.
+*   **Hard Negatives vs. Random Negatives:** Using random negatives is computationally cheap, but "hard" negatives (SNPs that are sequence-similar but functionally different) would accelerate convergence. I recommend a **MoCo-style memory bank** to maintain a large set of negative samples without requiring massive batch sizes.
+*   **Projection Head Complexity:** A deeper projection head generally improves the contrastive representation but can lead to overfitting on small genomic datasets. A 2-layer MLP is proposed as a balanced baseline.
+
+---
+
+## 7. Identified Weaknesses & Mitigations
+
+| Weakness | Mitigation Strategy |
+| :--- | :--- |
+| **Data Leakage:** SNPs in high LD may be too similar, leading to "trivial" positives. | Implement an **LD-aware sampling strategy** that ensures training and validation sets contain SNPs from different LD blocks. |
+| **Sequence Sparsity:** Most of the window is non-coding/non-functional DNA. | Incorporate **Attention Masking** or use a pre-trained genomic foundation model (e.g., DNABERT) as the initial encoder weights. |
+| **Class Imbalance:** Pathogenic SNPs are significantly rarer than benign ones. | Use the contrastive phase to learn a general "genomic language" first, then employ **Weighted Cross-Entropy** during the supervised fine-tuning phase. |

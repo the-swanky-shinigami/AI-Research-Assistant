@@ -31,11 +31,13 @@ class LocalLLM:
 
         start = time.perf_counter()
 
+        messages = conversation.to_openai()
+
         response = self.client.chat.completions.create(
 
             model=self.model,
 
-            messages=conversation.to_openai(),
+            messages=messages,
 
             temperature=temperature,
 

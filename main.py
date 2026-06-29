@@ -3,80 +3,79 @@ from agents.architect import Architect
 from core.logger import ResearchLogger
 from core.workspace import Workspace
 from core.research_state import ResearchState
+from core.task import Task
 
 
 def main():
 
+    # Create research state
     state = ResearchState(
-
         goal="""
 Design a contrastive learning model
 for SNP classification.
 """
     )
 
+    # Infrastructure
     logger = ResearchLogger()
-
     workspace = Workspace()
 
+    # Agent
     architect = Architect()
 
+    # Update state
     state.set_agent("Architect")
-
     state.next_attempt()
 
-    attempt = workspace.new_attempt()
+    # Create attempt folder
+    attempt_dir = workspace.new_attempt()
+
+    # Create task
+    task = Task(
+        title="Architecture Design",
+        objective=state.goal,
+        assigned_to="Architect",
+        output_file="architecture.md",
+    )
 
     logger.section("Experiment")
-
     logger.write(
-
 f"""
 Goal:
-
 {state.goal}
 
-Current Attempt:
-
+Attempt:
 {state.attempt}
 
 Current Agent:
-
 {state.current_agent}
 """
-
     )
 
-    response = architect.think(state.goal)
+    # Run architect
+    response = architect.think(task)
 
     state.set_architecture(response.text)
-
-    workspace.write_file(
-
-        attempt,
-
-        "architecture.md",
-
-        response.text
-
-    )
-
     state.success()
 
-    logger.section("Architect")
+    # Save architecture
+    workspace.write_file(
+        attempt_dir,
+        "architecture.md",
+        response.text,
+    )
 
+    logger.section("Architect")
     logger.write(response.text)
 
     logger.section("Statistics")
-
     logger.write(
-
 f"""
 Model:
 {response.model}
 
 Elapsed:
-{response.elapsed_time:.2f}
+{response.elapsed_time:.2f} sec
 
 Prompt Tokens:
 {response.prompt_tokens}
@@ -86,25 +85,12 @@ Completion Tokens:
 
 Total Tokens:
 {response.total_tokens}
-
-Successful Runs:
-{state.successful_runs}
-
-Failed Runs:
-{state.failed_runs}
 """
-
     )
 
     print(response.text)
-
-    print()
-
-    print("Experiment State")
-
-    print(state)
+    print("\nExperiment completed successfully.")
 
 
 if __name__ == "__main__":
-
     main()

@@ -1,5 +1,6 @@
 from core.llm import LocalLLM
 from core.conversation import Conversation
+from core.task import Task
 
 
 class BaseAgent:
@@ -12,15 +13,26 @@ class BaseAgent:
         self.role = role
         self.llm = LocalLLM(model)
 
-    def think(self, task, context=""):
+    def think(self, task: Task):
 
-        convo = Conversation()
+        conversation = Conversation()
 
-        convo.add_system(self.role)
+        conversation.add_system(self.role)
 
-        if context:
-            convo.add_user(context)
+        prompt = f"""
+TASK TITLE
+{task.title}
 
-        convo.add_user(task)
+OBJECTIVE
+{task.objective}
 
-        return self.llm.chat(convo)
+INPUT FILES
+{", ".join(task.input_files) if task.input_files else "None"}
+
+EXPECTED OUTPUT
+{task.output_file}
+"""
+
+        conversation.add_user(prompt)
+
+        return self.llm.chat(conversation)
