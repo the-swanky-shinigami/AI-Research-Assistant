@@ -1,15 +1,20 @@
+import time
+
 from openai import OpenAI
+
 from config import LMSTUDIO_URL, API_KEY
+
 from core.conversation import Conversation
+from core.response import AIResponse
+
+from datetime import datetime
+
 
 
 class LocalLLM:
-    """
-    Wrapper around LM Studio's OpenAI-compatible API.
-    Every AI agent in the system will use this class.
-    """
 
     def __init__(self, model: str):
+
         self.model = model
 
         self.client = OpenAI(
@@ -22,16 +27,44 @@ class LocalLLM:
         conversation: Conversation,
         temperature=0.7,
         max_tokens=4096,
-    ):
+    ) -> AIResponse:
+
+        start = time.perf_counter()
+
         response = self.client.chat.completions.create(
+
             model=self.model,
+
             messages=conversation.to_openai(),
+
             temperature=temperature,
+
             max_tokens=max_tokens,
+
         )
+
+        elapsed = time.perf_counter() - start
 
         answer = response.choices[0].message.content
 
         conversation.add_assistant(answer)
 
-        return answer
+        usage = response.usage
+
+        return AIResponse(
+
+            text=answer,
+
+            model=self.model,
+
+            elapsed_time=elapsed,
+
+            prompt_tokens=usage.prompt_tokens,
+
+            completion_tokens=usage.completion_tokens,
+
+            total_tokens=usage.total_tokens,
+
+            timestamp=str(datetime.now())
+
+        )

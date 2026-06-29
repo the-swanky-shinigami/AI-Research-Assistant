@@ -13,6 +13,7 @@ class BaseAgent:
         self.llm = LocalLLM(model)
 
     def think(self, task, context=""):
+
         convo = Conversation()
 
         convo.add_system(self.role)
